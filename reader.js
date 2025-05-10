@@ -208,6 +208,32 @@ document.addEventListener('DOMContentLoaded', () => {
         isRegisterMode = !isRegisterMode;
         setAuthMode();
     });
+
+    // Đăng nhập với Google
+    const googleLoginBtn = document.getElementById('googleLoginBtn');
+    if (googleLoginBtn) {
+        googleLoginBtn.addEventListener('click', async () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                const result = await auth.signInWithPopup(provider);
+                // Nếu là user mới, lưu vào database
+                if (result.additionalUserInfo.isNewUser) {
+                    await db.ref('users/' + result.user.uid).set({
+                        email: result.user.email,
+                        displayName: result.user.displayName,
+                        photoURL: result.user.photoURL,
+                        provider: 'google',
+                        createdAt: new Date().toISOString()
+                    });
+                }
+                showToast('Đăng nhập Google thành công', 'success');
+                authModal.hide();
+            } catch (error) {
+                showToast('Đăng nhập Google thất bại', 'danger');
+                console.error('Google login error:', error);
+            }
+        });
+    }
 });
 
 themeSwitch.addEventListener('click', toggleTheme);
@@ -1070,9 +1096,20 @@ authForm.addEventListener('submit', async (e) => {
             return;
         }
         try {
-            await auth.createUserWithEmailAndPassword(email, password);
-            showToast('Đăng ký thành công', 'success');
-            authModal.hide();
+            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            try {
+                await db.ref('users/' + userCredential.user.uid).set({
+                    email: userCredential.user.email,
+                    createdAt: new Date().toISOString()
+                });
+                showToast('Đăng ký thành công', 'success');
+                authModal.hide();
+            } catch (dbError) {
+                // Nếu lưu vào database lỗi, xóa tài khoản vừa tạo
+                await userCredential.user.delete();
+                showToast('Đăng ký thất bại, vui lòng thử lại', 'danger');
+                console.error('Lỗi lưu user vào database:', dbError);
+            }
         } catch (error) {
             showToast(error.message, 'danger');
         }
