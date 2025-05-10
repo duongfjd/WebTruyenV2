@@ -500,34 +500,142 @@ body {
 
 /* Responsive Chapter Reader */
 @media (max-width: 768px) {
-    .chapter-content {
-        padding: 1rem;
-        font-size: calc(var(--font-size-base) - 2px);
+    body {
+        font-size: 15px;
     }
-
+    .container {
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+    .navbar .navbar-brand {
+        font-size: 1.1rem;
+    }
+    .navbar .search-box {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    .navbar .d-flex.align-items-center {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .section-title {
+        font-size: 1.1rem;
+    }
+    .story-card {
+        margin-bottom: 1rem;
+        max-width: 100%;
+    }
+    .story-image {
+        padding-top: 140%;
+    }
+    .story-title {
+        font-size: 1rem;
+    }
+    .story-author {
+        font-size: 0.9rem;
+    }
+    .story-meta {
+        font-size: 0.8rem;
+    }
+    .updates-list {
+        gap: 0.5rem;
+    }
+    .update-item img {
+        width: 48px;
+        height: 72px;
+    }
+    .update-title {
+        font-size: 0.95rem;
+    }
+    .update-meta {
+        font-size: 0.8rem;
+    }
+    .sidebar {
+        position: static;
+        margin-top: 1.5rem;
+    }
+    .card {
+        margin-bottom: 1rem;
+    }
+    .genre-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+    .genre-item {
+        padding: 0.5rem;
+        font-size: 0.95rem;
+    }
+    .modal-dialog {
+        margin: 0.5rem;
+        max-width: 98vw;
+    }
+    .modal-content {
+        padding: 0.5rem;
+    }
+    .chapter-content {
+        padding: 0.5rem;
+        font-size: 1rem;
+    }
     .chapter-navigation {
         flex-wrap: wrap;
-        padding: 0.75rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
     }
-
     .chapter-navigation select {
         width: 100%;
-        order: 1;
     }
-
-    .chapter-navigation .btn-group {
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
-        order: 2;
-        margin-top: 0.5rem;
+    .chapter-list th, .chapter-list td {
+        font-size: 0.9rem;
+        padding: 0.3rem 0.5rem;
     }
+    .loading-spinner {
+        align-items: flex-start;
+        padding-top: 30vh;
+    }
+    .toast-container {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100vw;
+        max-width: 100vw;
+        padding: 0.5rem;
+    }
+    .toast {
+        min-width: 90vw;
+        font-size: 0.95rem;
+    }
+}
 
-    .font-size-controls {
-        order: 3;
-        margin-top: 0.5rem;
-        justify-content: center;
-        width: 100%;
+@media (max-width: 480px) {
+    .section-title {
+        font-size: 1rem;
+    }
+    .story-title {
+        font-size: 0.95rem;
+    }
+    .story-author {
+        font-size: 0.8rem;
+    }
+    .story-meta {
+        font-size: 0.7rem;
+    }
+    .update-title {
+        font-size: 0.9rem;
+    }
+    .update-meta {
+        font-size: 0.7rem;
+    }
+    .genre-item {
+        font-size: 0.9rem;
+    }
+    .modal-content {
+        padding: 0.2rem;
+    }
+    .chapter-content {
+        font-size: 0.95rem;
+    }
+    .chapter-list th, .chapter-list td {
+        font-size: 0.8rem;
     }
 }
 
@@ -585,86 +693,6 @@ body {
 
 .toast {
     min-width: 300px;
-}
-
-/* Responsive Styles */
-@media (max-width: 768px) {
-    :root {
-        --font-size-base: 14px;
-        --spacing-base: 0.75rem;
-    }
-
-    .search-box {
-        width: 100%;
-        margin-bottom: 1rem;
-    }
-
-    .story-card {
-        margin-bottom: 1rem;
-    }
-
-    .story-image {
-        padding-top: 140%;
-    }
-
-    .update-item img {
-        width: 60px;
-        height: 90px;
-    }
-
-    .genre-grid {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    }
-
-    .chapter-content {
-        padding: 1rem;
-        font-size: var(--font-size-base);
-    }
-
-    .modal-dialog {
-        margin: 0.5rem;
-    }
-
-    .featured-stories .row {
-        gap: 1rem;
-    }
-
-    .featured-stories .col-md-4 {
-        width: 160px;
-    }
-
-    .story-title {
-        font-size: 0.9rem;
-    }
-
-    .story-author {
-        font-size: 0.8rem;
-    }
-
-    .story-meta {
-        font-size: 0.75rem;
-    }
-
-    .update-title {
-        font-size: 0.9rem;
-    }
-
-    .update-meta {
-        font-size: 0.8rem;
-    }
-
-    .recommended-item img {
-        width: 45px;
-        height: 68px;
-    }
-
-    .recommended-title {
-        font-size: 0.85rem;
-    }
-
-    .recommended-meta {
-        font-size: 0.75rem;
-    }
 }
 
 /* Animation Styles */
