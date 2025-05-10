@@ -1,4 +1,3 @@
-
 // Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyAmNTV2Gn_1ja4XyYeUOTjukktzjKcbRAI",
@@ -224,16 +223,25 @@ function updateAuthUI() {
     const user = auth.currentUser;
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
-    const userMenu = document.getElementById('userMenu');
+    let userNameDisplay = document.getElementById('userNameDisplay');
+    if (!userNameDisplay) {
+        // Thêm vào navbar nếu chưa có
+        const navbar = document.querySelector('.navbar .d-flex.align-items-center');
+        userNameDisplay = document.createElement('span');
+        userNameDisplay.id = 'userNameDisplay';
+        userNameDisplay.className = 'me-3 fw-bold text-primary';
+        navbar.insertBefore(userNameDisplay, logoutBtn);
+    }
     if (user) {
         if (loginBtn) loginBtn.classList.add('d-none');
         if (logoutBtn) logoutBtn.classList.remove('d-none');
-        if (userMenu) userMenu.style.display = 'block';
-        document.getElementById('userName').textContent = user.displayName || 'User';
+        userNameDisplay.textContent = user.email || user.displayName || 'User';
+        userNameDisplay.style.display = 'inline-block';
     } else {
         if (loginBtn) loginBtn.classList.remove('d-none');
         if (logoutBtn) logoutBtn.classList.add('d-none');
-        if (userMenu) userMenu.style.display = 'none';
+        userNameDisplay.textContent = '';
+        userNameDisplay.style.display = 'none';
     }
 }
 
@@ -855,19 +863,20 @@ function showRankingPage() {
 function showHistoryPage() {
     document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
     document.getElementById('navHistory').classList.add('active');
-    if (currentUser) {
+    if (auth.currentUser) {
         loadReadingHistory();
     } else {
         showToast('Vui lòng đăng nhập để xem lịch sử đọc', 'warning');
+        authModal.show();
     }
 }
 
 // Bookmark function
 async function toggleBookmark(story) {
+    if (!requireLogin()) return;
     try {
-        const bookmarkRef = db.ref(`users/${currentUser.uid}/bookmarks/${story.id}`);
+        const bookmarkRef = db.ref(`users/${auth.currentUser.uid}/bookmarks/${story.id}`);
         const snapshot = await bookmarkRef.once('value');
-        
         if (snapshot.exists()) {
             await bookmarkRef.remove();
             showToast('Đã xóa khỏi danh sách đánh dấu', 'success');
@@ -888,6 +897,7 @@ async function toggleBookmark(story) {
 
 // Share function
 function shareStory(story) {
+    if (!requireLogin()) return;
     if (navigator.share) {
         navigator.share({
             title: story.title,
@@ -1079,4 +1089,14 @@ authForm.addEventListener('submit', async (e) => {
 
 // Initialize the app
 loadStories();
-loadGenres(); 
+loadGenres();
+
+// Khi bấm xem lịch sử mà chưa đăng nhập thì hiện modal đăng nhập
+function requireLogin(action) {
+    if (!auth.currentUser) {
+        showToast('Vui lòng đăng nhập để sử dụng chức năng này', 'warning');
+        authModal.show();
+        return false;
+    }
+    return true;
+} 
