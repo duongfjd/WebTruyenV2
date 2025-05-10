@@ -1,4 +1,4 @@
-// Khởi tạo Firebase
+// Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyAmNTV2Gn_1ja4XyYeUOTjukktzjKcbRAI",
     authDomain: "apptruyen-670b1.firebaseapp.com",
@@ -10,625 +10,1072 @@ const firebaseConfig = {
     measurementId: "G-GKRH6H98MR"
 };
 
-// Kiểm tra kết nối Firebase
-try {
-    // Khởi tạo Firebase
-    firebase.initializeApp(firebaseConfig);
-    console.log('Firebase đã được khởi tạo thành công');
-} catch (error) {
-    console.error('Lỗi khởi tạo Firebase:', error);
-    alert('Không thể kết nối đến Firebase. Vui lòng kiểm tra lại cấu hình.');
-}
-
-// Khởi tạo các service
-const database = firebase.database();
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 const auth = firebase.auth();
 
-// Kiểm tra kết nối database
-database.ref('.info/connected').on('value', (snap) => {
-    if (snap.val() === true) {
-        console.log('Đã kết nối đến Realtime Database');
-    } else {
-        console.log('Mất kết nối đến Realtime Database');
-    }
-});
-
-// Xử lý lỗi database
-database.ref().on('error', (error) => {
-    console.error('Lỗi database:', error);
-    alert('Có lỗi xảy ra khi kết nối database: ' + error.message);
-});
-
-// Xử lý lỗi authentication
-auth.onAuthStateChanged((user) => {
-    if (user) {
-        console.log('Người dùng đã đăng nhập:', user.email);
-    } else {
-        console.log('Chưa có người dùng đăng nhập');
-    }
-}, (error) => {
-    console.error('Lỗi authentication:', error);
-    alert('Có lỗi xảy ra khi xác thực: ' + error.message);
-});
-
-// Tham chiếu đến các node trong Realtime Database
-const storiesRef = database.ref('stories');
-const usersRef = database.ref('Users');
-
 // DOM Elements
-const loginBtn = document.getElementById('loginBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const navStories = document.getElementById('navStories');
-const navUsers = document.getElementById('navUsers');
-const mainContent = document.getElementById('mainContent');
 const searchInput = document.getElementById('searchInput');
-const genreList = document.getElementById('genreList');
+const updatesList = document.getElementById('updatesList');
+const genreGrid = document.getElementById('genreGrid');
+const storyDetailModal = new bootstrap.Modal(document.getElementById('storyDetailModal'));
+const chapterReaderModal = new bootstrap.Modal(document.getElementById('chapterReaderModal'));
+const loadingSpinner = document.getElementById('loadingSpinner');
+const toastContainer = document.getElementById('toastContainer');
 
-// Modal và các thành phần liên quan
-const storyEditModal = new bootstrap.Modal(document.getElementById('storyEditModal'));
-const chaptersModal = new bootstrap.Modal(document.getElementById('chaptersModal'));
-const chapterEditModal = new bootstrap.Modal(document.getElementById('chapterEditModal'));
-const confirmDeleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-
-// Các thể loại truyện
-const genres = [
-    "Ngôn Tình", "Quan Trường", "Khoa Huyễn", "Hệ Thống", 
-    "Huyền Huyễn", "Kiếm Hiệp", "Dị Giới", "Linh Dị", "Xuyên Không"
-];
-
-// Biến toàn cục
+// State
 let currentUser = null;
-let currentStoryId = null;
-let currentChapterId = null;
-let deleteCallback = null;
+let currentStory = null;
+let currentChapter = null;
+let stories = [];
+let genres = [];
+let readingHistory = [];
+let fontSize = 16;
 
-// Khởi tạo ứng dụng
-function initApp() {
-    setupAuth();
-    setupEventListeners();
-    displayGenres();
-    showStoriesView();
+// Theme
+const themeSwitch = document.getElementById('themeSwitch');
+const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+
+// --- AUTH LOGIC ---
+const authModal = new bootstrap.Modal(document.getElementById('authModal'));
+const authForm = document.getElementById('authForm');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authConfirmPassword = document.getElementById('authConfirmPassword');
+const authConfirmPasswordGroup = document.getElementById('authConfirmPasswordGroup');
+const authModalTitle = document.getElementById('authModalTitle');
+const authSubmitBtn = document.getElementById('authSubmitBtn');
+const switchAuthMode = document.getElementById('switchAuthMode');
+
+let isRegisterMode = false;
+
+// Initialize theme
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    } else if (prefersDarkScheme.matches) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
 }
 
-// Thiết lập các sự kiện
-function setupEventListeners() {
-    // Navigation
-    navStories.addEventListener('click', showStoriesView);
-    navUsers.addEventListener('click', showUsersView);
-    
-    // Story modal
-    document.getElementById('saveStoryBtn').addEventListener('click', saveStory);
-    document.getElementById('storyImage').addEventListener('input', function() {
-        document.getElementById('storyImagePreview').src = this.value || 'https://via.placeholder.com/300x200';
-    });
-    
-    // Chapters modal
-    document.getElementById('addChapterBtn').addEventListener('click', addNewChapter);
-    
-    // Chapter modal
-    document.getElementById('saveChapterBtn').addEventListener('click', saveChapter);
-    
-    // Delete confirmation
-    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
-        if (deleteCallback) deleteCallback();
-        confirmDeleteModal.hide();
-    });
-    
-    // Search
-    searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase();
-        filterStories(searchTerm);
-    });
+// Toggle theme
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
 }
 
-// Xử lý đăng nhập/đăng xuất
-function setupAuth() {
-    auth.onAuthStateChanged(user => {
-        currentUser = user;
-        if (user) {
-            // Người dùng đã đăng nhập
-            loginBtn.classList.add('d-none');
-            logoutBtn.classList.remove('d-none');
-            
-            // Kiểm tra quyền admin
-            checkAdminStatus(user.uid);
+// Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Initializing app...');
+    initTheme();
+    
+    // Initialize Firebase connection check
+    db.ref('.info/connected').on('value', (snap) => {
+        if (snap.val() === true) {
+            console.log('Connected to Firebase');
         } else {
-            // Người dùng chưa đăng nhập
-            loginBtn.classList.remove('d-none');
-            logoutBtn.classList.add('d-none');
-            mainContent.innerHTML = '<div class="alert alert-warning">Vui lòng đăng nhập để tiếp tục</div>';
+            console.log('Not connected to Firebase');
         }
     });
     
-    loginBtn.addEventListener('click', () => {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider).catch(error => {
-            console.error('Lỗi đăng nhập:', error);
-            alert('Đăng nhập thất bại: ' + error.message);
+    // Load initial data
+    loadStories().then(() => {
+        console.log('Stories loaded:', stories.length);
+    }).catch(error => {
+        console.error('Error loading stories:', error);
+    });
+    
+    loadGenres().then(() => {
+        console.log('Genres loaded:', genres.length);
+    }).catch(error => {
+        console.error('Error loading genres:', error);
+    });
+    
+    if (currentUser) {
+        loadReadingHistory().then(() => {
+            console.log('Reading history loaded:', readingHistory.length);
+        }).catch(error => {
+            console.error('Error loading reading history:', error);
+        });
+    }
+
+    // Add event listeners for filters
+    document.querySelectorAll('.story-filters .btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.story-filters .btn').forEach(b => b.classList.remove('active'));
+            // Add active class to clicked button
+            e.target.classList.add('active');
+            // Filter stories
+            const filter = e.target.dataset.filter;
+            filterStories(filter);
         });
     });
-    
-    logoutBtn.addEventListener('click', () => {
-        auth.signOut();
-    });
-}
 
-// Kiểm tra quyền admin
-function checkAdminStatus(userId) {
-    usersRef.child(userId).once('value').then(snapshot => {
-        const userData = snapshot.val();
-        if (!userData || !userData.isAdmin) {
-            alert('Bạn không có quyền truy cập trang admin');
-            auth.signOut();
+    document.querySelectorAll('.update-filters .btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.update-filters .btn').forEach(b => b.classList.remove('active'));
+            // Add active class to clicked button
+            e.target.classList.add('active');
+            // Filter updates
+            const timeFilter = e.target.dataset.time;
+            filterUpdates(timeFilter);
+        });
+    });
+
+    // Add event listeners for navigation
+    document.getElementById('navHome').addEventListener('click', (e) => {
+        e.preventDefault();
+        showHomePage();
+    });
+
+    document.getElementById('navLibrary').addEventListener('click', (e) => {
+        e.preventDefault();
+        showLibraryPage();
+    });
+
+    document.getElementById('navRanking').addEventListener('click', (e) => {
+        e.preventDefault();
+        showRankingPage();
+    });
+
+    document.getElementById('navHistory').addEventListener('click', (e) => {
+        e.preventDefault();
+        showHistoryPage();
+    });
+
+    // Add event listeners for chapter navigation
+    document.getElementById('prevChapterBtn').addEventListener('click', () => {
+        if (currentStory && currentChapter) {
+            const currentIndex = currentStory.chapters.findIndex(ch => ch.id === currentChapter.id);
+            if (currentIndex > 0) {
+                readChapter(currentIndex - 1);
+            }
         }
     });
+
+    document.getElementById('nextChapterBtn').addEventListener('click', () => {
+        if (currentStory && currentChapter) {
+            const currentIndex = currentStory.chapters.findIndex(ch => ch.id === currentChapter.id);
+            if (currentIndex < currentStory.chapters.length - 1) {
+                readChapter(currentIndex + 1);
+            }
+        }
+    });
+
+    // Add event listeners for story actions
+    document.querySelector('.bookmark-btn')?.addEventListener('click', () => {
+        if (currentUser && currentStory) {
+            toggleBookmark(currentStory);
+        } else {
+            showToast('Vui lòng đăng nhập để sử dụng tính năng này', 'warning');
+        }
+    });
+
+    document.querySelector('.share-btn')?.addEventListener('click', () => {
+        if (currentStory) {
+            shareStory(currentStory);
+        }
+    });
+
+    // Show login modal when click loginBtn
+    const loginBtn = document.getElementById('loginBtn');
+    if (loginBtn) {
+        loginBtn.addEventListener('click', () => {
+            isRegisterMode = false;
+            setAuthMode();
+            authModal.show();
+        });
+    }
+
+    // Show logout
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            await auth.signOut();
+            showToast('Đã đăng xuất', 'success');
+        });
+    }
+
+    // Switch between login/register
+    switchAuthMode.addEventListener('click', (e) => {
+        e.preventDefault();
+        isRegisterMode = !isRegisterMode;
+        setAuthMode();
+    });
+});
+
+themeSwitch.addEventListener('click', toggleTheme);
+
+// Auth state observer
+auth.onAuthStateChanged((user) => {
+    currentUser = user;
+    updateAuthUI();
+});
+
+// Update auth UI
+function updateAuthUI() {
+    const user = auth.currentUser;
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userMenu = document.getElementById('userMenu');
+    if (user) {
+        if (loginBtn) loginBtn.classList.add('d-none');
+        if (logoutBtn) logoutBtn.classList.remove('d-none');
+        if (userMenu) userMenu.style.display = 'block';
+        document.getElementById('userName').textContent = user.displayName || 'User';
+    } else {
+        if (loginBtn) loginBtn.classList.remove('d-none');
+        if (logoutBtn) logoutBtn.classList.add('d-none');
+        if (userMenu) userMenu.style.display = 'none';
+    }
 }
 
-// Hiển thị danh sách thể loại
+// Load stories
+async function loadStories() {
+    showLoading();
+    try {
+        console.log('Loading stories from Firebase...');
+        const snapshot = await db.ref('stories').once('value');
+        stories = [];
+        
+        if (!snapshot.exists()) {
+            console.log('No stories found in database');
+            showToast('Không tìm thấy truyện nào', 'warning');
+            return;
+        }
+
+        snapshot.forEach((childSnapshot) => {
+            const story = childSnapshot.val();
+            console.log('Processing story:', story.title || childSnapshot.key);
+            
+            // Format story data with defaults
+            const formattedStory = {
+                id: childSnapshot.key,
+                title: story.title || 'Chưa có tiêu đề',
+                author: story.author || 'Chưa có tác giả',
+                coverImage: story.image || 'https://via.placeholder.com/300x400',
+                description: story.description || 'Chưa có mô tả',
+                status: story.status || 'Đang tiến hành',
+                views: story.views || 0,
+                lastUpdated: story.lastUpdated || new Date().toISOString(),
+                lastChapter: story.lastChapter || 0,
+                genres: story.genre ? [story.genre] : [],
+                chapters: []
+            };
+
+            // Format chapters if they exist
+            if (story.chapters) {
+                formattedStory.chapters = Object.entries(story.chapters)
+                    .map(([id, chapter]) => ({
+                        id,
+                        title: chapter.title || `Chương ${chapter.number}`,
+                        content: chapter.content || '',
+                        date: chapter.updatedAt || new Date().toISOString(),
+                        number: chapter.number || 0
+                    }))
+                    .sort((a, b) => a.number - b.number);
+            }
+
+            stories.push(formattedStory);
+        });
+
+        console.log(`Loaded ${stories.length} stories`);
+        
+        // Display stories
+        displayFeaturedStories();
+        displayLatestUpdates();
+        
+        // Update recommended stories
+        updateRecommendedStories();
+        
+        // Update popular genres
+        updatePopularGenres();
+        
+    } catch (error) {
+        console.error('Error loading stories:', error);
+        showToast('Lỗi khi tải truyện', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Load genres
+async function loadGenres() {
+    showLoading();
+    try {
+        const snapshot = await db.ref('genres').once('value');
+        genres = [];
+        snapshot.forEach((childSnapshot) => {
+            const genre = childSnapshot.val();
+            // Format genre data
+            genres.push({
+                id: childSnapshot.key,
+                name: genre.name || 'Chưa có tên',
+                icon: genre.icon || 'bi-book',
+                count: genre.count || 0
+            });
+        });
+        displayGenres();
+    } catch (error) {
+        console.error('Error loading genres:', error);
+        showToast('Lỗi khi tải thể loại', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Load reading history
+async function loadReadingHistory() {
+    if (!currentUser) return;
+    
+    try {
+        const snapshot = await db.ref(`users/${currentUser.uid}/readingHistory`).once('value');
+        readingHistory = [];
+        snapshot.forEach((childSnapshot) => {
+            const history = childSnapshot.val();
+            history.id = childSnapshot.key;
+            readingHistory.push(history);
+        });
+        displayReadingHistory();
+    } catch (error) {
+        console.error('Error loading reading history:', error);
+    }
+}
+
+// Display featured stories
+function displayFeaturedStories() {
+    const featuredStories = stories
+        .sort((a, b) => b.views - a.views)
+        .slice(0, 6);
+    
+    const container = document.querySelector('.featured-stories .row');
+    if (!container) return;
+
+    container.innerHTML = featuredStories.map(story => `
+        <div class="col-md-4 mb-4">
+            <div class="story-card fade-in">
+                <div class="story-image">
+                    <img src="${story.coverImage}" alt="${story.title}">
+                    <div class="story-overlay">
+                        <span class="badge bg-primary">${story.status}</span>
+                    </div>
+                </div>
+                <div class="story-info">
+                    <h3 class="story-title">${story.title}</h3>
+                    <p class="story-author">${story.author}</p>
+                    <div class="story-meta">
+                        <span><i class="bi bi-eye"></i> ${formatNumber(story.views)}</span>
+                        <span><i class="bi bi-book"></i> ${story.chapters.length} chương</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.story-card').forEach((card, index) => {
+        card.addEventListener('click', () => showStoryDetail(featuredStories[index]));
+    });
+}
+
+// Display latest updates
+function displayLatestUpdates() {
+    const latestUpdates = stories
+        .filter(story => story.lastUpdated)
+        .sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated))
+        .slice(0, 10);
+    
+    const container = document.querySelector('.updates-list');
+    if (!container) return;
+
+    container.innerHTML = latestUpdates.map(story => `
+        <div class="update-item fade-in">
+            <img src="${story.coverImage}" alt="${story.title}">
+            <div class="update-info">
+                <h4 class="update-title">${story.title}</h4>
+                <div class="update-meta">
+                    <span>Chương ${story.lastChapter}</span>
+                    <span>${formatDate(story.lastUpdated)}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.update-item').forEach((item, index) => {
+        item.addEventListener('click', () => showStoryDetail(latestUpdates[index]));
+    });
+}
+
+// Display genres
 function displayGenres() {
-    genreList.innerHTML = '';
-    const allItem = document.createElement('button');
-    allItem.className = 'list-group-item list-group-item-action active';
-    allItem.textContent = 'Tất cả';
-    allItem.addEventListener('click', () => {
-        document.querySelectorAll('#genreList button').forEach(btn => btn.classList.remove('active'));
-        allItem.classList.add('active');
-        showStoriesView();
+    const container = document.querySelector('.genre-grid');
+    if (!container) return;
+
+    container.innerHTML = genres.map(genre => `
+        <div class="genre-item fade-in" data-genre="${genre.id}">
+            <i class="bi ${genre.icon}"></i>
+            <h4>${genre.name}</h4>
+            <span>${genre.count} truyện</span>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.genre-item').forEach(item => {
+        item.addEventListener('click', () => filterByGenre(item.dataset.genre));
     });
-    genreList.appendChild(allItem);
-    
-    genres.forEach(genre => {
-        const item = document.createElement('button');
-        item.className = 'list-group-item list-group-item-action';
-        item.textContent = genre;
+}
+
+// Display reading history
+function displayReadingHistory() {
+    if (!currentUser) return;
+
+    const container = document.getElementById('readingHistory');
+    if (!container) return;
+
+    const history = readingHistory
+        .sort((a, b) => new Date(b.lastRead) - new Date(a.lastRead))
+        .slice(0, 5);
+
+    container.innerHTML = history.map(item => `
+        <div class="update-item fade-in">
+            <img src="${item.coverImage}" alt="${item.title}">
+            <div class="update-info">
+                <h4 class="update-title">${item.title}</h4>
+                <div class="update-meta">
+                    <span>Chapter ${item.chapter}</span>
+                    <span>${formatDate(item.lastRead)}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.update-item').forEach((item, index) => {
         item.addEventListener('click', () => {
-            document.querySelectorAll('#genreList button').forEach(btn => btn.classList.remove('active'));
-            item.classList.add('active');
-            showStoriesView(genre);
+            const story = stories.find(s => s.id === history[index].storyId);
+            if (story) {
+                showStoryDetail(story);
+            }
         });
-        genreList.appendChild(item);
     });
 }
 
-// Hiển thị view quản lý truyện
-function showStoriesView(genre = null) {
-    mainContent.innerHTML = `
-        <div class="card">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-book"></i> Quản lý truyện</h5>
-                <button class="btn btn-light btn-sm" id="addStoryBtn"><i class="bi bi-plus"></i> Thêm truyện</button>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>STT</th>
-                                <th>Tiêu đề</th>
-                                <th>Tác giả</th>
-                                <th>Thể loại</th>
-                                <th>Lượt xem</th>
-                                <th>Hành động</th>
-                            </tr>
-                        </thead>
-                        <tbody id="storiesTableBody">
-                            <!-- Danh sách truyện sẽ được thêm bằng JS -->
-                        </tbody>
-                    </table>
+// Show story detail
+function showStoryDetail(story) {
+    currentStory = story;
+    const modal = document.getElementById('storyDetailModal');
+    
+    modal.querySelector('.modal-title').textContent = story.title;
+    modal.querySelector('.story-cover').src = story.coverImage;
+    modal.querySelector('.story-description').textContent = story.description;
+    
+    const chapterList = modal.querySelector('.chapter-list tbody');
+    chapterList.innerHTML = story.chapters?.map((chapter, index) => `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${chapter.title}</td>
+            <td>${formatDate(chapter.date)}</td>
+            <td>
+                <button class="btn btn-sm btn-primary read-chapter-btn" data-chapter="${index}">
+                    Đọc ngay
+                </button>
+            </td>
+        </tr>
+    `).join('') || '';
+
+    // Add event listeners for read buttons
+    chapterList.querySelectorAll('.read-chapter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent event bubbling
+            const chapterIndex = parseInt(btn.dataset.chapter);
+            readChapter(chapterIndex);
+        });
+    });
+
+    // Add event listener for the large 'Đọc ngay' button (read-btn)
+    const readNowBtn = modal.querySelector('.read-btn');
+    if (readNowBtn) {
+        readNowBtn.onclick = (e) => {
+            e.preventDefault();
+            readChapter(0); // Open the first chapter
+        };
+    }
+
+    storyDetailModal.show();
+}
+
+// Read chapter
+async function readChapter(chapterIndex) {
+    if (!currentStory) return;
+    
+    showLoading();
+    try {
+        const chapter = currentStory.chapters[chapterIndex];
+        if (!chapter) {
+            throw new Error('Chapter not found');
+        }
+        
+        currentChapter = chapter;
+        
+        const modal = document.getElementById('chapterReaderModal');
+        modal.querySelector('.modal-title').textContent = 
+            `${currentStory.title} - Chapter ${chapterIndex + 1}`;
+        
+        const content = modal.querySelector('.chapter-content');
+        content.innerHTML = chapter.content || 'Nội dung chương đang được cập nhật...';
+        
+        // Update font size
+        content.style.fontSize = `${fontSize}px`;
+        
+        // Update chapter navigation
+        const chapterSelect = modal.querySelector('.chapter-navigation select');
+        chapterSelect.innerHTML = currentStory.chapters.map((ch, idx) => `
+            <option value="${idx}" ${idx === chapterIndex ? 'selected' : ''}>
+                Chapter ${idx + 1}
+            </option>
+        `).join('');
+        
+        // Update views
+        await updateStoryViews(currentStory.id);
+        
+        // Update reading history
+        if (currentUser) {
+            await updateReadingHistory(currentStory, chapterIndex);
+        }
+        
+        storyDetailModal.hide();
+        chapterReaderModal.show();
+    } catch (error) {
+        console.error('Error reading chapter:', error);
+        showToast('Lỗi khi tải chương truyện', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Update story views
+async function updateStoryViews(storyId) {
+    try {
+        const storyRef = db.ref(`stories/${storyId}`);
+        const snapshot = await storyRef.once('value');
+        const currentViews = snapshot.val().views || 0;
+        await storyRef.update({ views: currentViews + 1 });
+    } catch (error) {
+        console.error('Error updating views:', error);
+    }
+}
+
+// Update reading history
+async function updateReadingHistory(story, chapterIndex) {
+    if (!currentUser) return;
+    
+    try {
+        const historyRef = db.ref(`users/${currentUser.uid}/readingHistory/${story.id}`);
+        await historyRef.set({
+            storyId: story.id,
+            title: story.title,
+            coverImage: story.coverImage,
+            chapter: chapterIndex + 1,
+            lastRead: new Date().toISOString()
+        });
+        
+        // Reload reading history
+        await loadReadingHistory();
+    } catch (error) {
+        console.error('Error updating reading history:', error);
+    }
+}
+
+// Filter by genre
+function filterByGenre(genreId) {
+    const filteredStories = stories.filter(story => 
+        story.genres && story.genres.includes(genreId)
+    );
+    
+    const container = document.getElementById('featuredStories');
+    container.innerHTML = filteredStories.map(story => `
+        <div class="col-md-4 mb-4">
+            <div class="story-card fade-in">
+                <div class="story-image">
+                    <img src="${story.coverImage}" alt="${story.title}">
+                    <div class="story-overlay">
+                        <span class="badge bg-primary">${story.status}</span>
+                    </div>
+                </div>
+                <div class="story-info">
+                    <h3 class="story-title">${story.title}</h3>
+                    <p class="story-author">${story.author}</p>
+                    <div class="story-meta">
+                        <span><i class="bi bi-eye"></i> ${formatNumber(story.views)}</span>
+                        <span><i class="bi bi-book"></i> ${story.chapters?.length || 0}</span>
+                    </div>
                 </div>
             </div>
         </div>
-    `;
-    
-    document.getElementById('addStoryBtn').addEventListener('click', addNewStory);
-    loadStoriesTable(genre);
-}
+    `).join('');
 
-// Tải danh sách truyện vào bảng
-function loadStoriesTable(genre = null) {
-    storiesRef.once('value').then(snapshot => {
-        const storiesTableBody = document.getElementById('storiesTableBody');
-        storiesTableBody.innerHTML = '';
-        
-        const stories = snapshot.val();
-        let count = 1;
-        
-        for (const storyId in stories) {
-            if (stories.hasOwnProperty(storyId)) {
-                const story = stories[storyId];
-                
-                if (genre && story.genre !== genre) continue;
-                
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${count++}</td>
-                    <td>${story.title}</td>
-                    <td>${story.author}</td>
-                    <td><span class="badge bg-primary">${story.genre}</span></td>
-                    <td>${story.views || 0}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary edit-story" data-id="${storyId}"><i class="bi bi-pencil"></i></button>
-                        <button class="btn btn-sm btn-danger delete-story" data-id="${storyId}"><i class="bi bi-trash"></i></button>
-                        <button class="btn btn-sm btn-success manage-chapters" data-id="${storyId}"><i class="bi bi-list-ol"></i></button>
-                    </td>
-                `;
-                
-                storiesTableBody.appendChild(row);
-            }
-        }
-        
-        // Thêm sự kiện cho các nút
-        document.querySelectorAll('.edit-story').forEach(btn => {
-            btn.addEventListener('click', function() {
-                editStory(this.getAttribute('data-id'));
-            });
-        });
-        
-        document.querySelectorAll('.delete-story').forEach(btn => {
-            btn.addEventListener('click', function() {
-                confirmDelete('Bạn có chắc muốn xóa truyện này?', () => {
-                    deleteStory(this.getAttribute('data-id'));
-                });
-            });
-        });
-        
-        document.querySelectorAll('.manage-chapters').forEach(btn => {
-            btn.addEventListener('click', function() {
-                manageChapters(this.getAttribute('data-id'));
-            });
-        });
+    // Add click event listeners
+    container.querySelectorAll('.story-card').forEach((card, index) => {
+        card.addEventListener('click', () => showStoryDetail(filteredStories[index]));
     });
+
+    showToast(`Đã lọc ${filteredStories.length} truyện thể loại ${genreId}`, 'info');
 }
 
-// Hiển thị view quản lý người dùng
-function showUsersView() {
-    mainContent.innerHTML = `
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-people"></i> Quản lý người dùng</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>User ID</th>
-                                <th>Admin</th>
-                                <th>Hành động</th>
-                            </tr>
-                        </thead>
-                        <tbody id="usersTableBody">
-                            <!-- Danh sách người dùng sẽ được thêm bằng JS -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    loadUsersTable();
-}
-
-// Tải danh sách người dùng vào bảng
-function loadUsersTable() {
-    usersRef.once('value').then(snapshot => {
-        const usersTableBody = document.getElementById('usersTableBody');
-        usersTableBody.innerHTML = '';
-        
-        const users = snapshot.val();
-        
-        for (const userId in users) {
-            if (users.hasOwnProperty(userId)) {
-                const user = users[userId];
-                
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${user.id}</td>
-                    <td>${userId}</td>
-                    <td>${user.isAdmin ? '<span class="badge bg-success">Admin</span>' : '<span class="badge bg-secondary">User</span>'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-warning toggle-admin" data-id="${userId}" data-admin="${user.isAdmin || false}">
-                            ${user.isAdmin ? '<i class="bi bi-person-dash"></i> Hủy admin' : '<i class="bi bi-person-plus"></i> Thêm admin'}
-                        </button>
-                    </td>
-                `;
-                
-                usersTableBody.appendChild(row);
-            }
-        }
-        
-        // Thêm sự kiện cho các nút
-        document.querySelectorAll('.toggle-admin').forEach(btn => {
-            btn.addEventListener('click', function() {
-                toggleAdminStatus(
-                    this.getAttribute('data-id'), 
-                    this.getAttribute('data-admin') === 'true'
-                );
-            });
-        });
-    });
-}
-
-// Thêm truyện mới
-function addNewStory() {
-    document.getElementById('storyModalTitle').textContent = 'Thêm truyện mới';
-    document.getElementById('storyForm').reset();
-    document.getElementById('storyId').value = '';
-    document.getElementById('storyImagePreview').src = 'https://via.placeholder.com/300x200';
-    
-    // Đổ dữ liệu thể loại vào select
-    const genreSelect = document.getElementById('storyGenre');
-    genreSelect.innerHTML = '';
-    genres.forEach(genre => {
-        const option = document.createElement('option');
-        option.value = genre;
-        option.textContent = genre;
-        genreSelect.appendChild(option);
-    });
-    
-    storyEditModal.show();
-}
-
-// Chỉnh sửa truyện
-function editStory(storyId) {
-    storiesRef.child(storyId).once('value').then(snapshot => {
-        const story = snapshot.val();
-        
-        document.getElementById('storyModalTitle').textContent = 'Chỉnh sửa truyện';
-        document.getElementById('storyId').value = storyId;
-        document.getElementById('storyTitle').value = story.title;
-        document.getElementById('storyAuthor').value = story.author;
-        document.getElementById('storyViews').value = story.views || 0;
-        document.getElementById('storyImage').value = story.image || '';
-        document.getElementById('storyImagePreview').src = story.image || 'https://via.placeholder.com/300x200';
-        
-        // Đổ dữ liệu thể loại vào select
-        const genreSelect = document.getElementById('storyGenre');
-        genreSelect.innerHTML = '';
-        genres.forEach(genre => {
-            const option = document.createElement('option');
-            option.value = genre;
-            option.textContent = genre;
-            option.selected = (genre === story.genre);
-            genreSelect.appendChild(option);
-        });
-        
-        storyEditModal.show();
-    });
-}
-
-// Lưu truyện (thêm mới hoặc cập nhật)
-function saveStory() {
-    const storyId = document.getElementById('storyId').value;
-    const storyData = {
-        title: document.getElementById('storyTitle').value,
-        author: document.getElementById('storyAuthor').value,
-        genre: document.getElementById('storyGenre').value,
-        views: parseInt(document.getElementById('storyViews').value) || 0,
-        image: document.getElementById('storyImage').value || ''
-    };
-    
-    if (!storyData.title || !storyData.author || !storyData.genre) {
-        alert('Vui lòng điền đầy đủ thông tin');
+// Search functionality
+searchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    if (query.length < 2) {
+        displayFeaturedStories();
         return;
     }
     
-    if (storyId) {
-        // Cập nhật truyện đã có
-        storiesRef.child(storyId).update(storyData)
-            .then(() => {
-                alert('Cập nhật truyện thành công');
-                storyEditModal.hide();
-                showStoriesView();
-            })
-            .catch(error => {
-                alert('Lỗi khi cập nhật truyện: ' + error.message);
-            });
-    } else {
-        // Thêm truyện mới
-        const newStoryRef = storiesRef.push();
-        newStoryRef.set(storyData)
-            .then(() => {
-                alert('Thêm truyện mới thành công');
-                storyEditModal.hide();
-                showStoriesView();
-            })
-            .catch(error => {
-                alert('Lỗi khi thêm truyện mới: ' + error.message);
-            });
+    const filteredStories = stories.filter(story => 
+        story.title.toLowerCase().includes(query) ||
+        story.author.toLowerCase().includes(query)
+    );
+    
+    const container = document.getElementById('featuredStories');
+    container.innerHTML = filteredStories.map(story => `
+        <div class="col-md-4 mb-4">
+            <div class="story-card fade-in">
+                <div class="story-image">
+                    <img src="${story.coverImage}" alt="${story.title}">
+                    <div class="story-overlay">
+                        <span class="badge bg-primary">${story.status}</span>
+                    </div>
+                </div>
+                <div class="story-info">
+                    <h3 class="story-title">${story.title}</h3>
+                    <p class="story-author">${story.author}</p>
+                    <div class="story-meta">
+                        <span><i class="bi bi-eye"></i> ${formatNumber(story.views)}</span>
+                        <span><i class="bi bi-book"></i> ${story.chapters?.length || 0}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.story-card').forEach((card, index) => {
+        card.addEventListener('click', () => showStoryDetail(filteredStories[index]));
+    });
+});
+
+// Font size controls
+document.getElementById('fontSizeDecrease').addEventListener('click', () => {
+    if (fontSize > 12) {
+        fontSize -= 2;
+        updateFontSize();
+    }
+});
+
+document.getElementById('fontSizeIncrease').addEventListener('click', () => {
+    if (fontSize < 24) {
+        fontSize += 2;
+        updateFontSize();
+    }
+});
+
+function updateFontSize() {
+    const content = document.querySelector('.chapter-content');
+    if (content) {
+        content.style.fontSize = `${fontSize}px`;
     }
 }
 
-// Xóa truyện
-function deleteStory(storyId) {
-    storiesRef.child(storyId).remove()
-        .then(() => {
-            alert('Xóa truyện thành công');
-            showStoriesView();
-        })
-        .catch(error => {
-            alert('Lỗi khi xóa truyện: ' + error.message);
-        });
+// Chapter navigation
+document.querySelector('.chapter-navigation select').addEventListener('change', (e) => {
+    const chapterIndex = parseInt(e.target.value);
+    readChapter(chapterIndex);
+});
+
+// Loading spinner
+function showLoading() {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'flex';
+    }
 }
 
-// Quản lý chương
-function manageChapters(storyId) {
-    currentStoryId = storyId;
-    
-    storiesRef.child(storyId).once('value').then(snapshot => {
-        const story = snapshot.val();
-        document.getElementById('chaptersStoryTitle').textContent = story.title;
-        
-        loadChaptersTable(storyId);
-        chaptersModal.show();
+function hideLoading() {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'none';
+    }
+}
+
+// Toast notifications
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0 fade-in`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+
+    // Remove toast after it's hidden
+    toast.addEventListener('hidden.bs.toast', () => {
+        toast.remove();
     });
 }
 
-// Tải danh sách chương vào bảng
-function loadChaptersTable(storyId) {
-    storiesRef.child(`${storyId}/chapters`).once('value').then(snapshot => {
-        const chaptersTableBody = document.getElementById('chaptersTableBody');
-        chaptersTableBody.innerHTML = '';
+// Utility functions
+function formatNumber(num) {
+    return new Intl.NumberFormat().format(num);
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    }).format(date);
+}
+
+// Filter stories by status
+function filterStories(status) {
+    let filteredStories = [...stories];
+    
+    if (status !== 'all') {
+        filteredStories = stories.filter(story => story.status === status);
+    }
+    
+    const container = document.querySelector('.featured-stories .row');
+    if (!container) return;
+
+    container.innerHTML = filteredStories.map(story => `
+        <div class="col-md-4 mb-4">
+            <div class="story-card fade-in">
+                <div class="story-image">
+                    <img src="${story.coverImage}" alt="${story.title}">
+                    <div class="story-overlay">
+                        <span class="badge bg-primary">${story.status}</span>
+                    </div>
+                </div>
+                <div class="story-info">
+                    <h3 class="story-title">${story.title}</h3>
+                    <p class="story-author">${story.author}</p>
+                    <div class="story-meta">
+                        <span><i class="bi bi-eye"></i> ${formatNumber(story.views)}</span>
+                        <span><i class="bi bi-book"></i> ${story.chapters.length} chương</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.story-card').forEach((card, index) => {
+        card.addEventListener('click', () => showStoryDetail(filteredStories[index]));
+    });
+}
+
+// Filter updates by time
+function filterUpdates(timeFilter) {
+    let filteredUpdates = [...stories];
+    const now = new Date();
+    
+    if (timeFilter === 'today') {
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        filteredUpdates = stories.filter(story => new Date(story.lastUpdated) >= today);
+    } else if (timeFilter === 'week') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        filteredUpdates = stories.filter(story => new Date(story.lastUpdated) >= weekAgo);
+    }
+    
+    const container = document.querySelector('.updates-list');
+    if (!container) return;
+
+    container.innerHTML = filteredUpdates.map(story => `
+        <div class="update-item fade-in">
+            <img src="${story.coverImage}" alt="${story.title}">
+            <div class="update-info">
+                <h4 class="update-title">${story.title}</h4>
+                <div class="update-meta">
+                    <span>Chương ${story.lastChapter}</span>
+                    <span>${formatDate(story.lastUpdated)}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.update-item').forEach((item, index) => {
+        item.addEventListener('click', () => showStoryDetail(filteredUpdates[index]));
+    });
+}
+
+// Navigation functions
+function showHomePage() {
+    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+    document.getElementById('navHome').classList.add('active');
+    loadStories();
+}
+
+function showLibraryPage() {
+    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+    document.getElementById('navLibrary').classList.add('active');
+    // TODO: Implement library page
+    showToast('Tính năng đang được phát triển', 'info');
+}
+
+function showRankingPage() {
+    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+    document.getElementById('navRanking').classList.add('active');
+    // TODO: Implement ranking page
+    showToast('Tính năng đang được phát triển', 'info');
+}
+
+function showHistoryPage() {
+    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+    document.getElementById('navHistory').classList.add('active');
+    if (currentUser) {
+        loadReadingHistory();
+    } else {
+        showToast('Vui lòng đăng nhập để xem lịch sử đọc', 'warning');
+    }
+}
+
+// Bookmark function
+async function toggleBookmark(story) {
+    try {
+        const bookmarkRef = db.ref(`users/${currentUser.uid}/bookmarks/${story.id}`);
+        const snapshot = await bookmarkRef.once('value');
         
-        const chapters = snapshot.val();
-        let count = 1;
-        
-        if (chapters) {
-            document.getElementById('totalChapters').textContent = Object.keys(chapters).length;
-            
-            for (const chapterId in chapters) {
-                if (chapters.hasOwnProperty(chapterId)) {
-                    const chapter = chapters[chapterId];
-                    
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${count++}</td>
-                        <td>${chapter.title}</td>
-                        <td>${chapter.views || 0}</td>
-                        <td>
-                            <button class="btn btn-sm btn-primary edit-chapter" data-id="${chapterId}"><i class="bi bi-pencil"></i></button>
-                            <button class="btn btn-sm btn-danger delete-chapter" data-id="${chapterId}"><i class="bi bi-trash"></i></button>
-                        </td>
-                    `;
-                    
-                    chaptersTableBody.appendChild(row);
-                }
-            }
+        if (snapshot.exists()) {
+            await bookmarkRef.remove();
+            showToast('Đã xóa khỏi danh sách đánh dấu', 'success');
         } else {
-            document.getElementById('totalChapters').textContent = '0';
-            chaptersTableBody.innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center text-muted">Truyện chưa có chương nào</td>
-                </tr>
-            `;
+            await bookmarkRef.set({
+                storyId: story.id,
+                title: story.title,
+                coverImage: story.coverImage,
+                lastUpdated: new Date().toISOString()
+            });
+            showToast('Đã thêm vào danh sách đánh dấu', 'success');
         }
-        
-        // Thêm sự kiện cho các nút
-        document.querySelectorAll('.edit-chapter').forEach(btn => {
-            btn.addEventListener('click', function() {
-                editChapter(this.getAttribute('data-id'));
-            });
-        });
-        
-        document.querySelectorAll('.delete-chapter').forEach(btn => {
-            btn.addEventListener('click', function() {
-                confirmDelete('Bạn có chắc muốn xóa chương này?', () => {
-                    deleteChapter(this.getAttribute('data-id'));
-                });
-            });
-        });
-    });
-}
-
-// Thêm chương mới
-function addNewChapter() {
-    document.getElementById('chapterModalTitle').textContent = 'Thêm chương mới';
-    document.getElementById('chapterForm').reset();
-    document.getElementById('chapterId').value = '';
-    document.getElementById('storyIdForChapter').value = currentStoryId;
-    chapterEditModal.show();
-}
-
-// Chỉnh sửa chương
-function editChapter(chapterId) {
-    currentChapterId = chapterId;
-    
-    storiesRef.child(`${currentStoryId}/chapters/${chapterId}`).once('value').then(snapshot => {
-        const chapter = snapshot.val();
-        
-        document.getElementById('chapterModalTitle').textContent = 'Chỉnh sửa chương';
-        document.getElementById('chapterId').value = chapterId;
-        document.getElementById('storyIdForChapter').value = currentStoryId;
-        document.getElementById('chapterTitle').value = chapter.title;
-        document.getElementById('chapterViews').value = chapter.views || 0;
-        document.getElementById('chapterContent').value = chapter.content;
-        
-        chapterEditModal.show();
-    });
-}
-
-// Lưu chương (thêm mới hoặc cập nhật)
-function saveChapter() {
-    const chapterId = document.getElementById('chapterId').value;
-    const storyId = document.getElementById('storyIdForChapter').value;
-    const chapterData = {
-        title: document.getElementById('chapterTitle').value,
-        views: parseInt(document.getElementById('chapterViews').value) || 0,
-        content: document.getElementById('chapterContent').value
-    };
-    
-    if (!chapterData.title || !chapterData.content) {
-        alert('Vui lòng điền đầy đủ thông tin');
-        return;
+    } catch (error) {
+        console.error('Error toggling bookmark:', error);
+        showToast('Có lỗi xảy ra', 'danger');
     }
-    
-    if (chapterId) {
-        // Cập nhật chương đã có
-        storiesRef.child(`${storyId}/chapters/${chapterId}`).update(chapterData)
-            .then(() => {
-                alert('Cập nhật chương thành công');
-                chapterEditModal.hide();
-                loadChaptersTable(storyId);
-            })
-            .catch(error => {
-                alert('Lỗi khi cập nhật chương: ' + error.message);
-            });
+}
+
+// Share function
+function shareStory(story) {
+    if (navigator.share) {
+        navigator.share({
+            title: story.title,
+            text: `Đọc truyện ${story.title} của ${story.author}`,
+            url: window.location.href
+        }).catch(error => {
+            console.error('Error sharing:', error);
+        });
     } else {
-        // Thêm chương mới
-        const newChapterRef = storiesRef.child(`${storyId}/chapters`).push();
-        newChapterRef.set(chapterData)
-            .then(() => {
-                alert('Thêm chương mới thành công');
-                chapterEditModal.hide();
-                loadChaptersTable(storyId);
-            })
-            .catch(error => {
-                alert('Lỗi khi thêm chương mới: ' + error.message);
-            });
+        // Fallback for browsers that don't support Web Share API
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('Đã sao chép link vào clipboard', 'success');
+        }).catch(() => {
+            showToast('Không thể sao chép link', 'danger');
+        });
     }
 }
 
-// Xóa chương
-function deleteChapter(chapterId) {
-    storiesRef.child(`${currentStoryId}/chapters/${chapterId}`).remove()
-        .then(() => {
-            alert('Xóa chương thành công');
-            loadChaptersTable(currentStoryId);
-        })
-        .catch(error => {
-            alert('Lỗi khi xóa chương: ' + error.message);
-        });
-}
+// Update recommended stories
+function updateRecommendedStories() {
+    const container = document.getElementById('recommendedStories');
+    if (!container) return;
 
-// Chuyển đổi trạng thái admin
-function toggleAdminStatus(userId, isAdmin) {
-    usersRef.child(userId).update({ isAdmin: !isAdmin })
-        .then(() => {
-            alert(`Đã ${isAdmin ? 'hủy quyền admin' : 'thêm quyền admin'} thành công`);
-            showUsersView();
-        })
-        .catch(error => {
-            alert('Lỗi khi cập nhật quyền admin: ' + error.message);
-        });
-}
+    // Get top 5 stories by views
+    const recommended = [...stories]
+        .sort((a, b) => b.views - a.views)
+        .slice(0, 5);
 
-// Hiển thị hộp thoại xác nhận xóa
-function confirmDelete(message, callback) {
-    document.getElementById('deleteMessage').textContent = message;
-    deleteCallback = callback;
-    confirmDeleteModal.show();
-}
+    container.innerHTML = recommended.map(story => `
+        <div class="recommended-item fade-in">
+            <img src="${story.coverImage}" alt="${story.title}">
+            <div class="recommended-info">
+                <h6 class="recommended-title">${story.title}</h6>
+                <div class="recommended-meta">
+                    <span><i class="bi bi-eye"></i> ${formatNumber(story.views)}</span>
+                    <span><i class="bi bi-book"></i> ${story.chapters.length} chương</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
 
-// Lọc truyện theo từ khóa
-function filterStories(searchTerm) {
-    const rows = document.querySelectorAll('#storiesTableBody tr');
-    
-    rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(searchTerm) ? '' : 'none';
+    // Add click event listeners
+    container.querySelectorAll('.recommended-item').forEach((item, index) => {
+        item.addEventListener('click', () => showStoryDetail(recommended[index]));
     });
 }
 
-// Khi DOM đã tải xong
-document.addEventListener('DOMContentLoaded', initApp);
+// Update popular genres
+function updatePopularGenres() {
+    const container = document.getElementById('popularGenres');
+    if (!container) return;
+
+    // Count stories per genre
+    const genreCounts = {};
+    stories.forEach(story => {
+        story.genres.forEach(genre => {
+            genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+        });
+    });
+
+    // Get top 5 genres
+    const popular = Object.entries(genreCounts)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5);
+
+    container.innerHTML = popular.map(([genre, count]) => `
+        <div class="popular-genre-item fade-in">
+            <i class="bi bi-bookmark"></i>
+            <span>${genre}</span>
+            <small>${count} truyện</small>
+        </div>
+    `).join('');
+
+    // Add click event listeners
+    container.querySelectorAll('.popular-genre-item').forEach((item, index) => {
+        item.addEventListener('click', () => filterByGenre(popular[index][0]));
+    });
+}
+
+// Error handling
+window.onerror = function(msg, url, lineNo, columnNo, error) {
+    console.error('Error: ', msg, '\nURL: ', url, '\nLine: ', lineNo, '\nColumn: ', columnNo, '\nError object: ', error);
+    showToast('Đã xảy ra lỗi, vui lòng thử lại sau', 'danger');
+    return false;
+};
+
+// Handle offline/online status
+window.addEventListener('online', () => {
+    showToast('Đã kết nối lại internet', 'success');
+    loadStories();
+});
+
+window.addEventListener('offline', () => {
+    showToast('Mất kết nối internet', 'warning');
+});
+
+// Handle visibility change
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Reload data when tab becomes visible
+        loadStories();
+    }
+});
+
+// Handle beforeunload
+window.addEventListener('beforeunload', (e) => {
+    if (currentStory && currentChapter) {
+        // Save reading progress
+        saveReadingProgress();
+    }
+});
+
+// Save reading progress
+async function saveReadingProgress() {
+    if (!currentUser || !currentStory || !currentChapter) return;
+
+    try {
+        await db.ref(`users/${currentUser.uid}/readingProgress/${currentStory.id}`).set({
+            storyId: currentStory.id,
+            chapterId: currentChapter.id,
+            chapterNumber: currentChapter.number,
+            lastRead: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error saving reading progress:', error);
+    }
+}
+
+// Load reading progress
+async function loadReadingProgress() {
+    if (!currentUser) return;
+
+    try {
+        const snapshot = await db.ref(`users/${currentUser.uid}/readingProgress`).once('value');
+        if (snapshot.exists()) {
+            const progress = snapshot.val();
+            // TODO: Implement reading progress restoration
+        }
+    } catch (error) {
+        console.error('Error loading reading progress:', error);
+    }
+}
+
+// Switch between login/register
+function setAuthMode() {
+    if (isRegisterMode) {
+        authModalTitle.textContent = 'Đăng ký';
+        authSubmitBtn.textContent = 'Đăng ký';
+        switchAuthMode.textContent = 'Đã có tài khoản? Đăng nhập';
+        authConfirmPasswordGroup.classList.remove('d-none');
+    } else {
+        authModalTitle.textContent = 'Đăng nhập';
+        authSubmitBtn.textContent = 'Đăng nhập';
+        switchAuthMode.textContent = 'Chưa có tài khoản? Đăng ký';
+        authConfirmPasswordGroup.classList.add('d-none');
+    }
+    authForm.reset();
+}
+
+// Handle form submit
+authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    if (isRegisterMode) {
+        const confirmPassword = authConfirmPassword.value;
+        if (password !== confirmPassword) {
+            showToast('Mật khẩu không khớp', 'danger');
+            return;
+        }
+        try {
+            await auth.createUserWithEmailAndPassword(email, password);
+            showToast('Đăng ký thành công', 'success');
+            authModal.hide();
+        } catch (error) {
+            showToast(error.message, 'danger');
+        }
+    } else {
+        try {
+            await auth.signInWithEmailAndPassword(email, password);
+            showToast('Đăng nhập thành công', 'success');
+            authModal.hide();
+        } catch (error) {
+            showToast('Sai email hoặc mật khẩu', 'danger');
+        }
+    }
+});
+
+// Initialize the app
+loadStories();
+loadGenres(); 
